@@ -1,0 +1,100 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+	<title>Upload Progress Test</title>
+	<link rel="icon" type="image/x-icon" href="/img/favicon.ico"/>
+	<script type="text/javascript" src="/js/prototype.js"></script>
+	<script type="text/javascript" src="/js/progressbar.js"></script>
+</head>
+<body style="font-family: verdana, geneva, arial, helvetica, sans-serif; font-size: 8pt;">
+
+<div class="subtitle">&nbsp;</div>
+<div class="smallseparator"></div>
+<div id="upload_slots">
+</div>
+<script>
+
+var slotCnt = 0;
+var uploading = new Hash();
+var progressMonitor = null;
+var progressAjax = null;
+var progressBarHandler = new JS_BRAMUS.jsProgressBarHandler();
+
+function addUploadSlot() {
+	slotCnt++;
+	var html = '<form id="upload_form_' + slotCnt + '" action="upload_file" method="POST" enctype="multipart/form-data" target="iframe_upload_' + slotCnt + '">\n' +
+			   '	<input type="file" name="upfile"/>\n' +
+			   '	<span id="upload_button_' + slotCnt + '" style="border: 2px solid black; padding: 3px 5px 3px 5px; cursor: pointer;" onclick="return sendFile(' + slotCnt + ')">Upload</span>\n' +
+			   '	<span class="progressBar" style="display: none;" id="upload_progress_' + slotCnt + '"></span>\n' +
+			   '	<iframe name="iframe_upload_' + slotCnt + '" id="iframe_upload_' + slotCnt + '" style="display: none;">\n' +
+			   '	</iframe>\n' +
+			   '</form>\n';
+	$('upload_slots').insert(html);
+	Event.observe($('iframe_upload_' + slotCnt), "load", uploadDone.curry(slotCnt));
+}
+
+function sendFile(slot) {
+	var pbarid = 'upload_progress_' + slot;
+	$(pbarid).show();
+	progressBarHandler.pbArray[pbarid]	= new JS_BRAMUS.jsProgressBar($(pbarid), 0);
+	var form = $('upload_form_' + slot);
+	var file = form.upfile.value;	// file to upload
+	uploading.set(slot, file);
+	if(!progressMonitor) {
+		progressMonitor = setInterval("updateProgressBars()", 1000);
+	}
+	form.action = '/upload_file?id=' + file;
+	$('upload_button_' + slot).hide();
+	form.submit();
+	// if disabled is before submit the file will never be uploaded
+	form.upfile.disabled = true;
+	addUploadSlot();
+}
+
+function updateProgressBars() {
+	if(!progressAjax) {
+		progressAjax = new Ajax.Request('/get_upload_progress', {
+			method: 'GET',
+			parameters: { 'files': uploading.toJSON() },
+			onComplete: function(request) {
+				progressAjax = null;
+			},
+			onSuccess: function(request) {
+				if(request && request.responseText) {
+					var hash = $H(eval("(" + request.responseText + ")"));
+					hash.each(function(pair) {
+						progressBarHandler.setPercentage('upload_progress_' + pair.key, pair.value);
+					});
+				}
+				progressAjax = null;
+			}
+		});
+	}
+}
+
+function uploadDone(slot) {
+	uploading.unset(slot);
+	if(uploading.keys().length == 0) {
+		clearInterval(progressMonitor);
+		progressMonitor = null;
+	}
+	var doc = frames['iframe_upload_' + slot].document;
+	var elem = doc.getElementsByTagName("pre")[0] || doc.getElementsByTagName("body")[0];
+	var ret = elem.innerHTML;
+	if(ret == "") {
+		return;
+	}
+	var data = eval("(" + ret + ")"); // parse JSON
+	progressBarHandler.setPercentage('upload_progress_' + slot, '100', true);
+	if(data.code != 0) {
+		alert("Upload code: " + data.code + " desc: " + data.desc);
+	}
+}
+
+addUploadSlot();
+
+</script>
+
+</body>
+</html>
